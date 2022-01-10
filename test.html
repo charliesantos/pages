@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://sdk.twilio.com/js/video/releases/2.18.3/twilio-video.js"></script>
+<script>
+
+const { createLocalTracks } = Twilio.Video;
+let $devices;
+
+async function ondevicechange() {
+  console.log('start createLocalTracks')
+  const [track] = await createLocalTracks({ audio: { deviceId: $devices.value } });
+  console.log('end createLocalTracks');
+}
+
+function populateDevices() {
+  $devices = document.querySelector('#device-list');
+  $devices.onchange = () => {
+    ondevicechange();
+  };
+
+  navigator.mediaDevices.getUserMedia({audio: true, video: true}).then(stream => {
+    const audioTrack = stream.getAudioTracks()[0];
+    const videoTrack = stream.getVideoTracks()[0];
+
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      devices.filter(d => d.kind === 'audioinput').forEach(device => {
+
+        const $device = document.createElement('option');
+        $device.value = device.deviceId;
+        $device.innerText = device.label;
+
+        $devices.appendChild($device);
+      });
+    }).then(() => {
+      audioTrack.stop();
+      videoTrack.stop();
+      ondevicechange();
+    })
+  })
+}
+
+</script>
+    <title>Test App</title>
+  </head>
+  <body onload="populateDevices()">
+    <select id="device-list"></select>
+  </body>
+</html>
