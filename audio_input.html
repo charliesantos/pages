@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://sdk.twilio.com/js/video/releases/2.18.3/twilio-video.js"></script>
+<script>
+
+const { createLocalTracks } = Twilio.Video;
+let $devices;
+
+async function ondevicechange() {
+  console.log('start createLocalTracks')
+  const [track] = await createLocalTracks({ audio: { deviceId: $devices.value } });
+  console.log('end createLocalTracks');
+
+  micLevel(track, 200, level => {});
+}
+
+function populateDevices() {
+  $devices = document.querySelector('#device-list');
+  $devices.onchange = () => {
+    ondevicechange();
+  };
+
+  navigator.mediaDevices.getUserMedia({audio: true, video: true}).then(stream => {
+    const audioTrack = stream.getAudioTracks()[0];
+    const videoTrack = stream.getVideoTracks()[0];
+
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      devices.filter(d => d.kind === 'audioinput').forEach(device => {
+
+        const $device = document.createElement('option');
+        $device.value = device.deviceId;
+        $device.innerText = device.label;
+
+        $devices.appendChild($device);
+      });
+    }).then(() => {
+      audioTrack.stop();
+      videoTrack.stop();
+      ondevicechange();
+    })
+  })
+}
+
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+const audioContext = AudioContext ? new AudioContext() : null;
+
+function rootMeanSquare(samples) {
+  const sumSq = samples.reduce((sumSq, sample) => sumSq + sample * sample, 0);
+  return Math.sqrt(sumSq / samples.length);
+}
+
+function micLevel(audioTrack, maxLevel, onLevel) {
+  audioContext.resume().then(() => {
+    let rafID;
+
+    const initializeAnalyser = () => {
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.5;
+
+      const stream = new MediaStream([audioTrack.mediaStreamTrack]);
+      const audioSource = audioContext.createMediaStreamSource(stream);
+      const samples = new Uint8Array(analyser.frequencyBinCount);
+
+      audioSource.connect(analyser);
+      startAnimation(analyser, samples);
+    };
+
+    initializeAnalyser();
+
+    audioTrack.on('started', initializeAnalyser);
+
+    let level = null;
+
+    function startAnimation(analyser, samples) {
+      window.cancelAnimationFrame(rafID);
+
+      rafID = requestAnimationFrame(function checkLevel() {
+        analyser.getByteFrequencyData(samples);
+        const rms = rootMeanSquare(samples);
+        const log2Rms = rms && Math.log2(rms);
+        const newLevel = Math.ceil((maxLevel * log2Rms) / 8);
+
+        if (level !== newLevel) {
+          level = newLevel;
+          onLevel(level);
+        }
+
+        rafID =  requestAnimationFrame(audioTrack.mediaStreamTrack.readyState === 'ended'
+          ? () => {
+            console.log('ended')
+          }
+          : checkLevel);
+      });
+    }
+  });
+}
+
+</script>
+    <title>Test App</title>
+  </head>
+  <body onload="populateDevices()">
+    <select id="device-list"></select>
+  </body>
+</html>
